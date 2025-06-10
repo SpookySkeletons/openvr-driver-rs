@@ -1,0 +1,19 @@
+[package]
+name = "openvr-driver-rs"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+openvr-driver-sys = { path = "sys" }
+thiserror = "1.0"
+bitflags = "2.0"
+
+[workspace]
+members = ["sys"]
+
+[[example]]
+name = "simple_hmd"
+crate-type = ["cdylib"]

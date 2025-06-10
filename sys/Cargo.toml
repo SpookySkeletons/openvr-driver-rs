@@ -1,0 +1,19 @@
+[package]
+name = "openvr-driver-sys"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+
+[dependencies]
+autocxx = "0.27"
+cxx = "1.0"
+
+[build-dependencies]
+autocxx-build = "0.27"
+cc = "1.0"
+
+# Suppress ALL warnings in this crate
+[lints.rust]
+warnings = "allow"
+unsafe_op_in_unsafe_fn = "allow"
