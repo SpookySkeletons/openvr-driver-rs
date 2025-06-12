@@ -1,6 +1,8 @@
 #ifndef RUST_PROVIDER_BRIDGE_H
 #define RUST_PROVIDER_BRIDGE_H
 
+#include "cstdint"
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -14,6 +16,9 @@ void rust_provider_destroy(RustProviderHandle* handle);
 
 // Factory function for creating the C++ wrapper
 void* create_rust_server_provider(void);
+
+void* driver_context_get_generic_interface(void* context, const char* interface_version, int* error);
+uint64_t driver_context_get_driver_handle(void* context);
 
 // Driver functions
 int rust_provider_init(RustProviderHandle* handle, void* driver_context);

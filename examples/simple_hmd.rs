@@ -127,7 +127,13 @@ impl TrackedDeviceServerDriver for SimpleHmdDriver {
 
 // ===== C INTERFACE FOR STEAMVR =====
 
-static mut PROVIDER: Option<Box<SimpleHmdProvider>> = None;
+/// Register our provider factory with the bridge
+fn register_simple_hmd_provider() {
+    sys::bridge::register_provider_factory(|| {
+        println!("SimpleHmdProvider factory: Creating SimpleHmdProvider");
+        Box::new(SimpleHmdProvider::new())
+    });
+}
 
 /// Main entry point - SteamVR calls this to get your driver
 #[unsafe(no_mangle)]
@@ -147,10 +153,13 @@ pub extern "C" fn HmdDriverFactory(
 
     match interface_str {
         "IServerTrackedDeviceProvider_004" => {
-            println!("HmdDriverFactory: Creating REAL C++ wrapper for Rust provider!");
+            println!("HmdDriverFactory: Registering SimpleHmdProvider and creating C++ wrapper!");
+            // Register our provider factory first
+            register_simple_hmd_provider();
+            
             unsafe {
                 *return_code = sys::vr::EVRInitError::VRInitError_None;
-                // Use the bridge instead of dummy pointer!
+                // Use the bridge to create the C++ wrapper
                 sys::bridge::create_provider_wrapper()
             }
         }

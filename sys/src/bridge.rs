@@ -14,20 +14,69 @@ impl BridgeDriverContext {
     }
 }
 
+// Generic provider creation - no assumptions about which driver
+static mut PROVIDER_FACTORY: Option<fn() -> Box<dyn ServerTrackedDeviceProvider>> = None;
+
+// Function for examples to register their provider factory
+pub fn register_provider_factory(factory: fn() -> Box<dyn ServerTrackedDeviceProvider>) {
+    unsafe {
+        PROVIDER_FACTORY = Some(factory);
+    }
+}
+
+unsafe extern "C" {
+    fn driver_context_get_generic_interface(
+        context: *mut c_void,
+        interface_version: *const std::ffi::c_char,
+        error: *mut i32,
+    ) -> *mut c_void;
+    fn driver_context_get_driver_handle(context: *mut c_void) -> u64;
+}
+
 impl DriverContext for BridgeDriverContext {
     fn get_generic_interface(&self, interface_version: &str) -> Option<*mut std::ffi::c_void> {
-        // TODO: This would need to call into the actual IVRDriverContext
-        // For now, return None to keep it simple
         println!(
             "BridgeDriverContext: get_generic_interface called for '{}'",
             interface_version
         );
-        None
+
+        if self.raw_context.is_null() {
+            println!("BridgeDriverContext: raw_context is null!");
+            return None;
+        }
+
+        unsafe {
+            let interface_cstr = std::ffi::CString::new(interface_version).ok()?;
+            let mut error = 0i32;
+
+            let result = driver_context_get_generic_interface(
+                self.raw_context,
+                interface_cstr.as_ptr(),
+                &mut error,
+            );
+
+            if error == 0 && !result.is_null() {
+                println!(
+                    "BridgeDriverContext: Successfully got interface '{}'",
+                    interface_version
+                );
+                Some(result)
+            } else {
+                println!(
+                    "BridgeDriverContext: Failed to get interface '{}', error: {}",
+                    interface_version, error
+                );
+                None
+            }
+        }
     }
 
     fn get_driver_handle(&self) -> vr::DriverHandle_t {
-        // TODO: This would need to call into the actual IVRDriverContext
-        0
+        if self.raw_context.is_null() {
+            return 0;
+        }
+
+        unsafe { driver_context_get_driver_handle(self.raw_context) }
     }
 }
 
@@ -131,11 +180,17 @@ impl ServerTrackedDeviceProvider for SimpleTestProvider {
 pub extern "C" fn rust_provider_create() -> *mut c_void {
     println!("rust_provider_create: Creating Rust provider...");
 
-    // TODO: Replace this with your actual SimpleHmdProvider
-    // For now using test provider until we can import your provider
-    let test_provider = Box::new(SimpleTestProvider::new());
-    let bridge_provider = Box::new(BridgeProvider::new(test_provider));
+    let provider = unsafe {
+        if let Some(factory) = PROVIDER_FACTORY {
+            factory()
+        } else {
+            // Fallback to test provider if no factory registered
+            println!("rust_provider_create: No provider factory registered, using test provider");
+            Box::new(SimpleTestProvider::new())
+        }
+    };
 
+    let bridge_provider = Box::new(BridgeProvider::new(provider));
     let ptr = Box::into_raw(bridge_provider) as *mut c_void;
     println!("rust_provider_create: Created provider at {:p}", ptr);
     ptr
@@ -186,6 +241,38 @@ pub extern "C" fn rust_provider_run_frame(handle: *mut c_void) {
         unsafe {
             let provider = &mut *(handle as *mut BridgeProvider);
             provider.run_frame();
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_provider_should_block_standby(handle: *mut c_void) -> i32 {
+    if !handle.is_null() {
+        unsafe {
+            let provider = &*(handle as *mut BridgeProvider);
+            if provider.should_block_standby_mode() { 1 } else { 0 }
+        }
+    } else {
+        0
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_provider_enter_standby(handle: *mut c_void) {
+    if !handle.is_null() {
+        unsafe {
+            let provider = &mut *(handle as *mut BridgeProvider);
+            provider.enter_standby();
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_provider_leave_standby(handle: *mut c_void) {
+    if !handle.is_null() {
+        unsafe {
+            let provider = &mut *(handle as *mut BridgeProvider);
+            provider.leave_standby();
         }
     }
 }

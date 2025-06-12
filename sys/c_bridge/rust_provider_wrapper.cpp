@@ -47,19 +47,55 @@ public:
     }
 
     virtual void RunFrame() override {
-        // TODO: Call rust_provider_run_frame() in next piece
+        if (rust_handle) {
+            rust_provider_run_frame(rust_handle);
+        }
     }
 
     virtual bool ShouldBlockStandbyMode() override {
+        if (rust_handle) {
+            return rust_provider_should_block_standby(rust_handle) != 0;
+        }
         return false;
     }
 
-    virtual void EnterStandby() override {}
-    virtual void LeaveStandby() override {}
+    virtual void EnterStandby() override {
+        if (rust_handle) {
+            rust_provider_enter_standby(rust_handle);
+        }
+    }
+    
+    virtual void LeaveStandby() override {
+        if (rust_handle) {
+            rust_provider_leave_standby(rust_handle);
+        }
+    }
 };
 
 // Factory function for creating the wrapper
 extern "C" void* create_rust_server_provider() {
     std::cout << "create_rust_server_provider: Creating wrapper..." << std::endl;
     return new RustServerTrackedDeviceProvider();
+}
+
+extern "C" void* driver_context_get_generic_interface(void* context, const char* interface_version, int* error) {
+    if (!context || !interface_version) {
+        if (error) *error = static_cast<int>(vr::VRInitError_Init_InvalidInterface);
+        return nullptr;
+    }
+
+    vr::IVRDriverContext* driver_context = static_cast<vr::IVRDriverContext*>(context);
+    vr::EVRInitError vr_error = vr::VRInitError_None;
+
+    void* result = driver_context->GetGenericInterface(interface_version, &vr_error);
+
+    if (error) *error = static_cast<int>(vr_error);
+    return result;
+}
+
+extern "C" uint64_t driver_context_get_driver_handle(void* context) {
+    if (!context) return 0;
+
+    vr::IVRDriverContext* driver_context = static_cast<vr::IVRDriverContext*>(context);
+    return driver_context->GetDriverHandle();
 }
