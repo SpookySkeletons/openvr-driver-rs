@@ -25,13 +25,20 @@ public:
     // For now, implement minimal required methods
     virtual vr::EVRInitError Init(vr::IVRDriverContext* pDriverContext) override {
         std::cout << "RustServerTrackedDeviceProvider::Init called!" << std::endl;
-        // TODO: Call rust_provider_init() in next piece
-        return vr::VRInitError_None;
+        if (rust_handle && rust_provider_init(rust_handle, pDriverContext) == 0) {
+            std::cout << "RustServerTrackedDeviceProvider::Init - Rust provider initialized successfully!" << std::endl;
+            return vr::VRInitError_None;
+        } else {
+            std::cout << "RustServerTrackedDeviceProvider::Init - Failed to initialize Rust provider!" << std::endl;
+            return vr::VRInitError_Init_InitCanceledByUser;
+        }
     }
 
     virtual void Cleanup() override {
         std::cout << "RustServerTrackedDeviceProvider::Cleanup called!" << std::endl;
-        // TODO: Call rust_provider_cleanup() in next piece
+        if (rust_handle) {
+            rust_provider_cleanup(rust_handle);
+        }
     }
 
     virtual const char* const* GetInterfaceVersions() override {

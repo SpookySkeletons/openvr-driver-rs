@@ -98,6 +98,10 @@ include_cpp! {
 // Re-export everything from the generated bindings
 pub use ffi::*;
 
+// Add the traits module
+pub mod traits;
+pub use traits::*;
+
 pub mod bridge;
 pub use bridge::*;
 

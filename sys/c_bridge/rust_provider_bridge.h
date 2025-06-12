@@ -15,6 +15,14 @@ void rust_provider_destroy(RustProviderHandle* handle);
 // Factory function for creating the C++ wrapper
 void* create_rust_server_provider(void);
 
+// Driver functions
+int rust_provider_init(RustProviderHandle* handle, void* driver_context);
+void rust_provider_cleanup(RustProviderHandle* handle);
+void rust_provider_run_frame(RustProviderHandle* handle);
+int rust_provider_should_block_standby(RustProviderHandle* handle);
+void rust_provider_enter_standby(RustProviderHandle* handle);
+void rust_provider_leave_standby(RustProviderHandle* handle);
+
 #ifdef __cplusplus
 }
 #endif
