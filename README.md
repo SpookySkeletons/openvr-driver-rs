@@ -10,6 +10,9 @@ OpenVR drivers are dynamic libraries that extend SteamVR functionality by adding
 - Handles the C++/Rust interoperability automatically
 - Provides type-safe access to OpenVR APIs
 
+> **Note**: This crate currently provides bindings for basic device provider and device driver interfaces only. Advanced component interfaces (display, input, etc.) are not yet implemented but PRs quite welcome.
+
+
 ## Usage
 
 Create a new driver project and add the dependency:
