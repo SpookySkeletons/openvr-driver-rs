@@ -38,18 +38,17 @@ bool server_driver_host_tracked_device_added(
     void* device_driver_ptr
 );
 
-// Device bridge functions
-typedef struct RustDeviceHandle RustDeviceHandle;
+// Generic device bridge functions - work with any device type
+typedef struct RustDeviceBridge RustDeviceBridge;
 
-RustDeviceHandle* rust_device_create_hmd(const char* serial_number);
-void rust_device_destroy(RustDeviceHandle* handle);
-int rust_device_activate(RustDeviceHandle* handle, uint32_t device_id);
-void rust_device_deactivate(RustDeviceHandle* handle);
-void rust_device_run_frame(RustDeviceHandle* handle);
-void rust_device_enter_standby(RustDeviceHandle* handle);
+void rust_device_destroy(RustDeviceBridge* handle);
+int rust_device_activate(RustDeviceBridge* handle, uint32_t device_id);
+void rust_device_deactivate(RustDeviceBridge* handle);
+void rust_device_run_frame(RustDeviceBridge* handle);
+void rust_device_enter_standby(RustDeviceBridge* handle);
 
-// Factory function for creating C++ device wrapper
-void* create_rust_device_wrapper(RustDeviceHandle* rust_device);
+// Factory function for creating C++ device wrapper from generic bridge
+void* create_rust_device_wrapper(RustDeviceBridge* rust_device_bridge);
 
 #ifdef __cplusplus
 }
