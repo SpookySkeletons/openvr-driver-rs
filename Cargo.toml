@@ -1,15 +1,17 @@
 [package]
 name = "openvr-driver-rs"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+description = "Minimal Rust bindings for creating OpenVR drivers"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/SpookySkeletons/openvr-driver-rs"
 
 [lib]
 crate-type = ["rlib"]
 
 [dependencies]
 openvr-driver-sys = { path = "sys" }
-thiserror = "1.0"
-bitflags = "2.0"
+logging = "0.1.0"
 
 [workspace]
 members = ["sys"]
