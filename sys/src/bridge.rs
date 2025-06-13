@@ -31,6 +31,13 @@ unsafe extern "C" {
         error: *mut i32,
     ) -> *mut c_void;
     fn driver_context_get_driver_handle(context: *mut c_void) -> u64;
+    fn server_driver_host_tracked_device_added(
+        host_ptr: *mut c_void,
+        serial_number: *const std::ffi::c_char,
+        device_class: i32,
+        device_driver_ptr: *mut c_void,
+    ) -> bool;
+    fn create_rust_device_wrapper(rust_device: *mut c_void) -> *mut c_void;
 }
 
 impl DriverContext for BridgeDriverContext {
@@ -130,6 +137,53 @@ impl BridgeProvider {
 
     fn leave_standby(&mut self) {
         self.inner.leave_standby();
+    }
+}
+
+// Device bridge wrapper - mirrors the provider pattern
+struct BridgeDevice {
+    inner: Box<dyn crate::traits::TrackedDeviceServerDriver>,
+}
+
+impl BridgeDevice {
+    fn new(device: Box<dyn crate::traits::TrackedDeviceServerDriver>) -> Self {
+        Self { inner: device }
+    }
+
+    fn activate(&mut self, device_id: u32) -> bool {
+        println!("BridgeDevice: Activating with device ID {}", device_id);
+        match self.inner.activate(device_id) {
+            Ok(()) => {
+                println!("BridgeDevice: Activation successful!");
+                true
+            }
+            Err(_) => {
+                println!("BridgeDevice: Activation failed!");
+                false
+            }
+        }
+    }
+
+    fn deactivate(&mut self) {
+        println!("BridgeDevice: Deactivating...");
+        self.inner.deactivate();
+        println!("BridgeDevice: Deactivation complete!");
+    }
+
+    fn run_frame(&mut self) {
+        self.inner.run_frame();
+    }
+
+    fn enter_standby(&mut self) {
+        self.inner.enter_standby();
+    }
+
+    fn get_serial_number(&self) -> String {
+        self.inner.get_serial_number()
+    }
+
+    fn get_device_class(&self) -> vr::ETrackedDeviceClass {
+        self.inner.get_device_class()
     }
 }
 
@@ -250,7 +304,11 @@ pub extern "C" fn rust_provider_should_block_standby(handle: *mut c_void) -> i32
     if !handle.is_null() {
         unsafe {
             let provider = &*(handle as *mut BridgeProvider);
-            if provider.should_block_standby_mode() { 1 } else { 0 }
+            if provider.should_block_standby_mode() {
+                1
+            } else {
+                0
+            }
         }
     } else {
         0
@@ -277,6 +335,143 @@ pub extern "C" fn rust_provider_leave_standby(handle: *mut c_void) {
     }
 }
 
+// Device bridge C functions that C++ will call
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_create_hmd(serial_number: *const std::ffi::c_char) -> *mut c_void {
+    println!("rust_device_create_hmd: Creating HMD device");
+
+    // For now, create a simple test device
+    // Later we'll make this call your actual SimpleHmdDriver
+    let serial = unsafe {
+        if serial_number.is_null() {
+            "UNKNOWN_HMD".to_string()
+        } else {
+            std::ffi::CStr::from_ptr(serial_number)
+                .to_str()
+                .unwrap_or("INVALID_HMD")
+                .to_string()
+        }
+    };
+
+    // Create a simple test device for now
+    let device = Box::new(SimpleTestDevice::new(serial));
+    let bridge_device = Box::new(BridgeDevice::new(device));
+
+    let ptr = Box::into_raw(bridge_device) as *mut c_void;
+    println!("rust_device_create_hmd: Created device at {:p}", ptr);
+    ptr
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_destroy(handle: *mut c_void) {
+    println!("rust_device_destroy: Destroying device at {:p}", handle);
+    if !handle.is_null() {
+        unsafe {
+            let _device = Box::from_raw(handle as *mut BridgeDevice);
+            println!("rust_device_destroy: Device destroyed");
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_activate(handle: *mut c_void, device_id: u32) -> i32 {
+    println!(
+        "rust_device_activate: Called with handle {:p}, device_id {}",
+        handle, device_id
+    );
+    if handle.is_null() {
+        return -1;
+    }
+
+    unsafe {
+        let device = &mut *(handle as *mut BridgeDevice);
+        if device.activate(device_id) {
+            0 // Success
+        } else {
+            -1 // Error
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_deactivate(handle: *mut c_void) {
+    println!("rust_device_deactivate: Called with handle {:p}", handle);
+    if !handle.is_null() {
+        unsafe {
+            let device = &mut *(handle as *mut BridgeDevice);
+            device.deactivate();
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_run_frame(handle: *mut c_void) {
+    if !handle.is_null() {
+        unsafe {
+            let device = &mut *(handle as *mut BridgeDevice);
+            device.run_frame();
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_device_enter_standby(handle: *mut c_void) {
+    if !handle.is_null() {
+        unsafe {
+            let device = &mut *(handle as *mut BridgeDevice);
+            device.enter_standby();
+        }
+    }
+}
+
+// Simple test device for now
+struct SimpleTestDevice {
+    serial: String,
+    device_id: Option<u32>,
+}
+
+impl SimpleTestDevice {
+    fn new(serial: String) -> Self {
+        println!("SimpleTestDevice: Creating device with serial '{}'", serial);
+        Self {
+            serial,
+            device_id: None,
+        }
+    }
+}
+
+impl crate::traits::TrackedDeviceServerDriver for SimpleTestDevice {
+    fn activate(&mut self, device_id: vr::TrackedDeviceIndex_t) -> Result<(), vr::EVRInitError> {
+        println!(
+            "SimpleTestDevice: activate() called with device_id {}",
+            device_id
+        );
+        self.device_id = Some(device_id);
+        Ok(())
+    }
+
+    fn deactivate(&mut self) {
+        println!("SimpleTestDevice: deactivate() called");
+        self.device_id = None;
+    }
+
+    fn run_frame(&mut self) {
+        // Called every frame - don't print
+    }
+
+    fn get_serial_number(&self) -> String {
+        self.serial.clone()
+    }
+
+    fn enter_standby(&mut self) {
+        println!("SimpleTestDevice: enter_standby() called");
+    }
+
+    fn get_device_class(&self) -> vr::ETrackedDeviceClass {
+        vr::ETrackedDeviceClass::TrackedDeviceClass_HMD
+    }
+}
+
 // Export the factory function
 unsafe extern "C" {
     fn create_rust_server_provider() -> *mut c_void;
@@ -284,4 +479,23 @@ unsafe extern "C" {
 
 pub fn create_provider_wrapper() -> *mut c_void {
     unsafe { create_rust_server_provider() }
+}
+
+// Public wrapper functions for device bridge - these just expose the extern and implementation functions
+pub unsafe fn create_rust_device_wrapper_public(rust_device: *mut c_void) -> *mut c_void {
+    create_rust_device_wrapper(rust_device)
+}
+
+pub unsafe fn server_driver_host_tracked_device_added_public(
+    host_ptr: *mut c_void,
+    serial_number: *const std::ffi::c_char,
+    device_class: i32,
+    device_driver_ptr: *mut c_void,
+) -> bool {
+    server_driver_host_tracked_device_added(host_ptr, serial_number, device_class, device_driver_ptr)
+}
+
+// Expose the device creation function by calling it directly
+pub fn rust_device_create_hmd_public(serial_number: *const std::ffi::c_char) -> *mut c_void {
+    unsafe { rust_device_create_hmd(serial_number) }
 }

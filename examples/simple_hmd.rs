@@ -41,15 +41,50 @@ impl ServerTrackedDeviceProvider for SimpleHmdProvider {
         // Create and register our HMD device
         let mut hmd = SimpleHmdDriver::new();
 
-        // Tell SteamVR about our device
+        // Tell SteamVR about our device using the bridge system
         if let Some(host) = self.driver_host {
             let serial = CString::new(hmd.get_serial_number()).unwrap();
-            // This is where we'd call TrackedDeviceAdded - for now just print
             println!(
-                "SimpleHmdProvider: Would register HMD with serial: {}",
+                "SimpleHmdProvider: Registering HMD with serial: {}",
                 hmd.get_serial_number()
             );
-            // let success = (*host).TrackedDeviceAdded(serial.as_ptr(), hmd.get_device_class(), &mut hmd as *mut _ as *mut _);
+            
+            // Create Rust device through bridge
+            let rust_device = unsafe {
+                sys::bridge::rust_device_create_hmd_public(serial.as_ptr())
+            };
+            
+            if rust_device.is_null() {
+                println!("SimpleHmdProvider: Failed to create Rust device!");
+                return Err(sys::vr::EVRInitError::VRInitError_Init_InitCanceledByUser);
+            }
+            
+            // Create C++ device wrapper
+            let cpp_device = unsafe {
+                sys::bridge::create_rust_device_wrapper_public(rust_device)
+            };
+            
+            if cpp_device.is_null() {
+                println!("SimpleHmdProvider: Failed to create C++ device wrapper!");
+                return Err(sys::vr::EVRInitError::VRInitError_Init_InitCanceledByUser);
+            }
+            
+            // Register device with OpenVR
+            let success = unsafe {
+                sys::bridge::server_driver_host_tracked_device_added_public(
+                    host as *mut std::ffi::c_void,
+                    serial.as_ptr(),
+                    hmd.get_device_class() as i32,
+                    cpp_device,
+                )
+            };
+            
+            if success {
+                println!("SimpleHmdProvider: Successfully registered HMD device!");
+            } else {
+                println!("SimpleHmdProvider: Failed to register HMD device!");
+                return Err(sys::vr::EVRInitError::VRInitError_Init_InitCanceledByUser);
+            }
         }
 
         self.hmd_driver = Some(hmd);
