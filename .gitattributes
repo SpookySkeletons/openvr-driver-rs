@@ -1,0 +1,2 @@
+# Exclude build scripts from language detection
+build_simple_hmd.sh linguist-documentatio
