@@ -15,4 +15,10 @@ driver-macros = { path = "driver-macros" }
 log = "0.4"
 
 [workspace]
-members = ["openvr-driver-bindings", "driver-macros", "examples/simplehmd"]
+members = [
+    "openvr-driver-bindings",
+    "driver-macros",
+    "openvr-driver",
+    "examples/simplehmd",
+    "examples/simple_hmd_clean",
+]
