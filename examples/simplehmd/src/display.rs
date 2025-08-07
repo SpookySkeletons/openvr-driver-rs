@@ -22,13 +22,16 @@ pub struct DisplayComponentWrapper(pub Arc<DisplayComponent>);
 
 impl IVRDisplayComponent_Interface for DisplayComponentWrapper {
     fn is_display_on_desktop(&self) -> bool {
-        // For virtual displays, this is typically true
+        // CRITICAL: For extended mode (non-direct mode), this must be true
+        // This tells SteamVR the display is part of the desktop
         true
     }
 
     fn is_display_real_display(&self) -> bool {
-        // This is a virtual display, not a real monitor
-        false
+        // CRITICAL: Must be true for SteamVR to find the display
+        // false = virtual display that doesn't exist
+        // true = real display output SteamVR can render to
+        true
     }
 
     fn get_recommended_render_target_size(&self, width: *mut u32, height: *mut u32) {
@@ -112,11 +115,14 @@ impl IVRDisplayComponent_Interface for DisplayComponentWrapper {
 
     fn get_window_bounds(&self, x: *mut i32, y: *mut i32, width: *mut u32, height: *mut u32) {
         unsafe {
+            // IMPORTANT: These coordinates must match an actual display on the system
+            // For testing, use primary monitor at 0,0
+            // In production, you'd detect an actual secondary display
             if !x.is_null() {
-                *x = self.0.config.window_x;
+                *x = 0; // Primary monitor X position
             }
             if !y.is_null() {
-                *y = self.0.config.window_y;
+                *y = 0; // Primary monitor Y position
             }
             if !width.is_null() {
                 *width = self.0.config.window_width as u32;

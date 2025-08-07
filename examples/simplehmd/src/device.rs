@@ -1,5 +1,6 @@
 use crate::{
     display::{create_display_wrapper, DisplayComponent, DisplayComponentWrapper},
+    properties,
     settings::DriverSettings,
 };
 use openvr_driver_bindings::{
@@ -89,28 +90,14 @@ impl ITrackedDeviceServerDriver_Interface for HmdDeviceWrapper {
 
         // Set device properties that OpenVR requires
         unsafe {
-            // Get property container for this device
-            // Note: In a real implementation, we'd get VRProperties from the driver context
-            // For now, we'll just log that these properties should be set
-            eprintln!("SimpleHMD: Should set device properties:");
-            eprintln!("  - Model Number: {}", self.0.settings.model_number);
-            eprintln!("  - Serial Number: {}", self.0.settings.serial_number);
-            eprintln!(
-                "  - Display Frequency: {} Hz",
-                self.0.settings.display_frequency
+            // Use our properties helper to actually set the properties
+            properties::set_hmd_properties(
+                device_index,
+                &self.0.settings.model_number,
+                &self.0.settings.serial_number,
+                self.0.settings.display_frequency,
+                self.0.settings.ipd,
             );
-            eprintln!("  - IPD: {} meters", self.0.settings.ipd);
-            eprintln!("  - Seconds from Vsync to Photons: 0.11");
-
-            // TODO: When VRProperties interface is available:
-            // let container = VRProperties()->TrackedDeviceToPropertyContainer(device_index);
-            // VRProperties()->SetStringProperty(container, Prop_ModelNumber_String, model_number);
-            // VRProperties()->SetStringProperty(container, Prop_SerialNumber_String, serial_number);
-            // VRProperties()->SetFloatProperty(container, Prop_DisplayFrequency_Float, 90.0);
-            // VRProperties()->SetFloatProperty(container, Prop_UserIpdMeters_Float, 0.063);
-            // VRProperties()->SetFloatProperty(container, Prop_SecondsFromVsyncToPhotons_Float, 0.11);
-            // VRProperties()->SetBoolProperty(container, Prop_IsOnDesktop_Bool, false);
-            // VRProperties()->SetBoolProperty(container, Prop_DisplayDebugMode_Bool, true);
         }
 
         // Start pose update thread

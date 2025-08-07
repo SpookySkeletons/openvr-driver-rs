@@ -7,6 +7,7 @@
 
 mod device;
 mod display;
+mod properties;
 mod provider;
 mod settings;
 

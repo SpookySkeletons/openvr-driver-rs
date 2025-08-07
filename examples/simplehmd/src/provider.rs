@@ -1,4 +1,4 @@
-use crate::HmdDevice;
+use crate::{properties, HmdDevice};
 use openvr_driver_bindings::{
     interfaces::IServerTrackedDeviceProvider_Interface,
     root::vr::{ETrackedDeviceClass, EVRInitError, IVRDriverContext, IVRServerDriverHost},
@@ -60,11 +60,30 @@ impl IServerTrackedDeviceProvider_Interface for ProviderWrapper {
         if !driver_context.is_null() {
             unsafe {
                 let context = driver_context as *mut IVRDriverContext;
+
+                // First, get VRProperties interface for setting device properties
+                let properties_interface = CString::new("IVRProperties_001").unwrap();
+                let mut properties_error = EVRInitError::None;
+                let vtable = (*context).vtable_;
+
+                if !vtable.is_null() {
+                    let get_interface_fn = (*vtable).IVRDriverContext_GetGenericInterface;
+                    let properties_ptr = get_interface_fn(
+                        context,
+                        properties_interface.as_ptr(),
+                        &mut properties_error as *mut EVRInitError,
+                    );
+
+                    if !properties_ptr.is_null() && properties_error == EVRInitError::None {
+                        properties::set_vr_properties(properties_ptr);
+                        eprintln!("SimpleHMD Provider: Got VRProperties interface");
+                    }
+                }
+
+                // Now get the host interface
                 let host_interface = CString::new("IVRServerDriverHost_006").unwrap();
                 let mut error = EVRInitError::None;
 
-                // Call through the vtable function pointer
-                let vtable = (*context).vtable_;
                 let host_ptr = if !vtable.is_null() {
                     let get_interface_fn = (*vtable).IVRDriverContext_GetGenericInterface;
                     get_interface_fn(
