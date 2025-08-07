@@ -10,12 +10,13 @@ repository = "https://github.com/SpookySkeletons/openvr-driver-rs"
 crate-type = ["rlib"]
 
 [dependencies]
-openvr-driver-sys = { path = "sys" }
-logging = "0.1.0"
+openvr-driver-bindings = { path = "openvr-driver-bindings" }
+driver-macros = { path = "driver-macros" }
+log = "0.4"
 
 [workspace]
-members = ["sys"]
-
-[[example]]
-name = "simple_hmd"
-crate-type = ["cdylib"]
+members = [
+    "openvr-driver-bindings",
+    "driver-macros",
+    "examples/pure_rust_driver",
+]

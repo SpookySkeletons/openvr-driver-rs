@@ -1,169 +1,134 @@
-# OpenVR Driver Rust
+# OpenVR Driver Rust Bindings
 
-Minimal Rust bindings for creating OpenVR drivers. This crate provides the essential bridge between Rust code and OpenVR's C++ interface system.
+Pure Rust bindings for creating OpenVR device drivers. This crate provides a safe, idiomatic Rust interface for implementing OpenVR drivers without any C++ dependencies.
 
-## Overview
+## Features
 
-OpenVR drivers are dynamic libraries that extend SteamVR functionality by adding support for VR hardware devices. Since OpenVR expects C++ virtual interfaces and Rust cannot directly implement C++ virtual functions, this crate provides a bridge system that:
+- **Pure Rust**: No C++ bridge or wrapper code required
+- **Type-safe**: Leverages Rust's type system for safety
+- **Zero-overhead**: Direct vtable implementation matches C++ ABI
+- **Automatic binding generation**: Uses bindgen to stay up-to-date with OpenVR headers
 
-- Exposes clean Rust traits for driver implementation
-- Handles the C++/Rust interoperability automatically
-- Provides type-safe access to OpenVR APIs
+## Architecture
 
-> **Note**: This crate currently provides bindings for basic device provider and device driver interfaces only. Advanced component interfaces (display, input, etc.) are not yet implemented but PRs quite welcome.
+This crate uses a similar approach to XRizer, directly implementing C++ virtual interfaces in Rust by:
+- Parsing OpenVR's C++ headers with bindgen
+- Generating Rust structs that match C++ vtable layouts
+- Using procedural macros to generate boilerplate for interface implementations
+- Providing safe Rust traits that map to OpenVR's C++ interfaces
 
+## Project Structure
+
+```
+openvr-driver-rs/
+├── src/                        # Main library with high-level traits
+├── openvr-driver-bindings/     # Low-level bindgen-generated bindings
+│   ├── headers/               # OpenVR C++ headers
+│   └── src/                   # Generated bindings and vtable infrastructure
+├── driver-macros/             # Procedural macros for interface implementation
+└── examples/
+    └── pure_rust_driver/      # Example driver implementation
+```
 
 ## Usage
 
-Create a new driver project and add the dependency:
-
-```bash
-# Create your driver project
-cargo new my-vr-driver --lib
-cd my-vr-driver
-
-# Add the OpenVR driver dependency
-cargo add openvr-driver-rs --git https://github.com/SpookySkeletons/openvr-driver-rs
-
-# Configure as dynamic library in Cargo.toml
-```
-
-Then update your `Cargo.toml` to set the crate type:
+Add this to your `Cargo.toml`:
 
 ```toml
-[lib]
-crate-type = ["cdylib"]  # Required for OpenVR drivers
+[dependencies]
+openvr-driver-rs = { git = "https://github.com/SpookySkeletons/openvr-driver-rs" }
 ```
 
-## Basic Driver Structure
+Then implement a basic driver:
 
 ```rust
 use openvr_driver_rs::*;
-use std::ffi::{CStr, CString};
-use std::os::raw::{c_char, c_void};
-use std::ptr;
 
-// 1. Implement the device provider (manages driver lifecycle)
-struct MyDriverProvider {
-    devices: Vec<MyDevice>,
-    driver_host: Option<*mut sys::vr::IVRServerDriverHost>,
+struct MyProvider {
+    // Your provider state
 }
 
-impl ServerTrackedDeviceProvider for MyDriverProvider {
-    fn init(&mut self, context: &dyn DriverContext) -> DriverResult<()> {
-        // Initialize your driver and register devices
+impl ServerTrackedDeviceProvider for MyProvider {
+    fn init(&mut self, driver_context: *mut c_void) -> Result<(), EVRInitError> {
+        // Initialize your driver
         Ok(())
     }
 
     fn cleanup(&mut self) {
-        // Clean up resources
+        // Cleanup resources
     }
 
     fn run_frame(&mut self) {
-        // Called every frame - update device states here
+        // Called every frame
     }
 
-    // ... other required methods
+    // ... implement other required methods
 }
 
-// 2. Implement your device(s)
 struct MyDevice {
-    device_id: Option<TrackedDeviceIndex_t>,
+    // Your device state
 }
 
 impl TrackedDeviceServerDriver for MyDevice {
-    fn activate(&mut self, device_id: TrackedDeviceIndex_t) -> DriverResult<()> {
-        self.device_id = Some(device_id);
+    fn activate(&mut self, device_index: u32) -> Result<(), EVRInitError> {
+        // Activate your device
         Ok(())
     }
 
-    fn get_serial_number(&self) -> String {
-        "MY_DEVICE_001".to_string()
+    fn get_pose(&self) -> DriverPose_t {
+        // Return current device pose
+        DriverPose_t::default()
     }
 
-    fn get_device_class(&self) -> ETrackedDeviceClass {
-        ETrackedDeviceClass::TrackedDeviceClass_HMD
-    }
-
-    // ... other required methods
+    // ... implement other required methods
 }
 
-// 3. Export the driver factory function
-#[unsafe(no_mangle)]
-pub unsafe extern "C" fn HmdDriverFactory(
-    interface_name: *const c_char,
-    return_code: *mut sys::vr::EVRInitError,
-) -> *mut c_void {
-    // Handle OpenVR interface requests
-    // See full example for complete implementation
-}
-```
-
-## Device Registration
-
-To register devices with OpenVR:
-
-```rust
-fn register_device(&self, device: &MyDevice, host: *mut sys::vr::IVRServerDriverHost) -> DriverResult<()> {
-    let serial = CString::new(device.get_serial_number()).unwrap();
-    let bridge_device = Box::new(MyDevice::new());
-
-    // Create bridge wrapper
-    let rust_device_bridge = create_device_bridge(bridge_device);
-    let cpp_device = unsafe { create_cpp_device_wrapper(rust_device_bridge) };
-
-    // Register with OpenVR
-    let success = unsafe {
-        register_device_with_openvr(
-            host as *mut std::ffi::c_void,
-            serial.as_ptr(),
-            device.get_device_class(),
-            cpp_device,
-        )
-    };
-
-    if success { Ok(()) } else { Err(/* error */) }
-}
+// Use the macro to generate the entry point
+openvr_driver_entry!(MyProvider);
 ```
 
 ## Building
 
-For native builds:
+Build your driver as a shared library:
+
+```toml
+[lib]
+crate-type = ["cdylib"]
+```
+
+Then build with:
+
 ```bash
 cargo build --release
 ```
 
-For Windows cross-compilation from Linux:
-```bash
-# Install cross-compilation tools
-cargo install cross
-rustup target add x86_64-pc-windows-gnu
+The resulting `.so` (Linux), `.dll` (Windows), or `.dylib` (macOS) can be loaded by OpenVR/SteamVR.
 
-# Build for Windows
-cross build --target x86_64-pc-windows-gnu --release
-```
+## Status
 
-## Deployment
+This is a work in progress. The following components are implemented:
 
-1. Build your driver as a `.dll` (Windows) or `.so` (Linux)
-2. Create an OpenVR driver manifest (`driver.vrdrivermanifest`)
-3. Place in SteamVR's `drivers` directory
-4. Register with SteamVR
+- [x] Bindgen-based C++ header parsing
+- [x] Basic vtable structure generation
+- [x] Procedural macro for interface implementation
+- [ ] Complete vtable wiring and FFI boundaries
+- [ ] Full trait implementations for all driver interfaces
+- [ ] Comprehensive examples and documentation
+- [ ] Testing with SteamVR runtime
 
-## Architecture
+## Contributing
 
-This crate consists of three layers:
-
-- **openvr-driver-rs**: High-level Rust API (this crate)
-- **openvr-driver-sys**: Low-level bindings and C++ bridge
-- **C++ Bridge**: Implements OpenVR interfaces and forwards to Rust
-
-The bridge handles all the complexity of converting between Rust traits and OpenVR's C++ virtual interface system.
+Contributions are welcome! Please feel free to submit pull requests or open issues.
 
 ## License
 
-Licensed under either of:
-- Apache License, Version 2.0
-- MIT License
+Licensed under either of
+
+ * Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+ * MIT license ([LICENSE-MIT](LICENSE-MIT))
 
 at your option.
+
+## Acknowledgments
+
+This project's approach is heavily inspired by [XRizer](https://github.com/Sorenon/xrizer), which pioneered the technique of implementing C++ virtual interfaces directly in Rust.
