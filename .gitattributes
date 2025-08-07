@@ -1,2 +1,9 @@
 # Exclude build scripts from language detection
-build_simple_hmd.sh linguist-documentatio
+examples/simple_hmd_clean/build_and_deploy.sh linguist-documentation
+
+# Mark OpenVR headers as vendored to exclude from language statistics
+openvr-driver-bindings/headers/*.h linguist-vendored
+openvr-driver-bindings/headers/openvr_driver.h linguist-vendored
+
+# Mark any generated code as generated
+**/target/** linguist-generated
