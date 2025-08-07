@@ -4,7 +4,7 @@
 //! required for OpenVR's C++ virtual interfaces. This is an internal module
 //! and should not be used directly by driver developers.
 
-mod device;
+pub mod device;
 mod display;
 mod provider;
 

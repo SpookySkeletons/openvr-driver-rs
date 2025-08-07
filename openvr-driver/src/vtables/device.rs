@@ -8,6 +8,15 @@ use std::sync::{Arc, Mutex};
 
 use super::VtableWrapper;
 
+/// Global storage for pending device activation index
+/// This is set by the vtable when OpenVR calls activate
+static PENDING_ACTIVATION_INDEX: Mutex<Option<u32>> = Mutex::new(None);
+
+/// Check if there's a pending activation and take it
+pub fn take_pending_activation() -> Option<u32> {
+    PENDING_ACTIVATION_INDEX.lock().unwrap().take()
+}
+
 /// Create a vtable for a TrackedDeviceServerDriver implementation (dynamic version)
 pub(crate) fn create_device_vtable(device: Arc<dyn TrackedDeviceServerDriver>) -> *mut c_void {
     create_device_vtable_impl(device)
@@ -30,15 +39,20 @@ fn create_device_vtable_impl(device: Arc<dyn TrackedDeviceServerDriver>) -> *mut
             dyn TrackedDeviceServerDriver,
         >;
 
+        let device = &(*vtable_wrapper).data;
+
         eprintln!(
             "[Device Vtable] Activate called for device index {}",
             device_index
         );
 
-        // Since we can't easily get mutable access through Arc<dyn Trait>,
-        // we assume the implementation uses interior mutability.
-        // For now, just return success and let the device handle activation
-        // through other means (like storing the index when created).
+        // Store the activation index globally for the device to retrieve
+        *PENDING_ACTIVATION_INDEX.lock().unwrap() = Some(device_index);
+
+        eprintln!(
+            "[Device Vtable] Stored activation index {} for processing in run_frame",
+            device_index
+        );
         EVRInitError::None
     }
 
@@ -134,7 +148,6 @@ fn create_device_vtable_impl(device: Arc<dyn TrackedDeviceServerDriver>) -> *mut
             ITrackedDeviceServerDriver__bindgen_vtable,
             dyn TrackedDeviceServerDriver,
         >;
-
         let device = &(*vtable_wrapper).data;
         device.get_pose()
     }

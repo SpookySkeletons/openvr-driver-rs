@@ -51,7 +51,7 @@ mod entry;
 pub mod error;
 pub mod interfaces;
 pub mod properties;
-pub(crate) mod vtables;
+mod vtables;
 
 // Public API exports
 pub use context::{DriverContext, DriverHost};
@@ -61,8 +61,9 @@ pub use properties::{Property, PropertyContainer, PropertyValue, PropertyWrite};
 
 // Interface traits that users implement
 pub use interfaces::{
-    CameraComponent, ComponentResult, ControllerComponent, DisplayComponent, DriverInput, Eye,
-    ServerTrackedDeviceProvider, TrackedDeviceServerDriver, VirtualDisplay, WatchdogProvider,
+    CameraComponent, Component, ComponentResult, ControllerComponent, DisplayComponent,
+    DriverInput, Eye, ServerTrackedDeviceProvider, TrackedDeviceServerDriver, VirtualDisplay,
+    WatchdogProvider,
 };
 
 // Configuration types
@@ -199,4 +200,13 @@ pub mod settings {
         );
         default
     }
+}
+
+/// Check if there's a pending device activation from OpenVR and take it
+///
+/// This is used by driver implementations to check if OpenVR has called
+/// the activate callback on a device. Due to Arc<dyn Trait> limitations,
+/// the vtable stores the activation index globally for retrieval.
+pub fn take_pending_device_activation() -> Option<u32> {
+    vtables::device::take_pending_activation()
 }

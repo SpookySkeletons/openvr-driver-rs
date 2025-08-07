@@ -3,7 +3,7 @@
 //! This module provides safe wrappers around OpenVR's driver context
 //! and host interfaces, handling the low-level FFI details.
 
-use crate::{sys, DriverError, DriverResult, TrackedDeviceServerDriver};
+use crate::{properties, sys, DriverError, DriverResult, TrackedDeviceServerDriver};
 use std::ffi::{c_void, CStr, CString};
 use std::sync::Arc;
 
@@ -49,6 +49,10 @@ impl DriverContext {
         // Try to get properties interface
         if let Ok(props) = driver_context.get_properties_interface() {
             driver_context.properties = Some(props);
+            // Set the global properties interface for property operations
+            unsafe {
+                properties::set_properties_interface(props);
+            }
         }
 
         // Try to get driver input interface

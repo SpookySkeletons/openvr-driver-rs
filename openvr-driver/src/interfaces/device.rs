@@ -65,6 +65,10 @@ pub trait TrackedDeviceServerDriver: Send + Sync + 'static {
     /// This is where you should initialize hardware, start tracking,
     /// and set up device properties.
     ///
+    /// Note: Due to Arc<dyn Trait> limitations, this may not be called directly
+    /// from the vtable. Implementations should use interior mutability or
+    /// call `perform_activation()` after registration.
+    ///
     /// # Arguments
     /// * `device_index` - The device index assigned by OpenVR
     ///
@@ -72,6 +76,24 @@ pub trait TrackedDeviceServerDriver: Send + Sync + 'static {
     /// * `Ok(())` if activation succeeded
     /// * `Err(InitError)` if activation failed
     fn activate(&mut self, device_index: u32) -> DriverResult<()>;
+
+    /// Perform self-activation after registration
+    ///
+    /// This method can be called by the device implementation after it has been
+    /// registered with OpenVR to perform activation tasks. This works around
+    /// the limitation of not being able to call mutable methods through Arc<dyn>.
+    ///
+    /// # Arguments
+    /// * `device_index` - The device index to activate with (usually 0 for first HMD)
+    ///
+    /// # Returns
+    /// * `Ok(())` if activation succeeded
+    /// * `Err(InitError)` if activation failed
+    fn perform_activation(&self, device_index: u32) -> DriverResult<()> {
+        // Default implementation does nothing
+        // Override this in implementations that use interior mutability
+        Ok(())
+    }
 
     /// Deactivate the device
     ///

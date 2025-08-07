@@ -11,7 +11,7 @@ use openvr_driver::{
 };
 use parking_lot::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -44,17 +44,7 @@ impl ServerTrackedDeviceProvider for SimpleHmdProvider {
         match context.register_device(device.clone() as Arc<dyn TrackedDeviceServerDriver>) {
             Ok(()) => {
                 eprintln!("SimpleHMD: Device registered successfully");
-
-                // Manually activate the device with index 0 (first HMD)
-                // In a real driver, you'd get this index from OpenVR's activation callback
-                let device_index = 0u32;
-                eprintln!(
-                    "SimpleHMD: Manually activating device with index {}",
-                    device_index
-                );
-                if let Err(e) = device.activate_internal(device_index) {
-                    eprintln!("SimpleHMD: Warning: Failed to activate device: {:?}", e);
-                }
+                eprintln!("SimpleHMD: Waiting for OpenVR to activate device...");
 
                 // Store reference to the device so we can manage it
                 self.devices.push(device);
@@ -84,6 +74,24 @@ impl ServerTrackedDeviceProvider for SimpleHmdProvider {
     }
 
     fn run_frame(&mut self) {
+        // Check for pending activation from vtable callback
+        if let Some(device_index) = openvr_driver::take_pending_device_activation() {
+            eprintln!(
+                "SimpleHMD: Processing pending activation for device index {} in run_frame",
+                device_index
+            );
+
+            // Activate the first device (we only have one HMD)
+            if let Some(device) = self.devices.first() {
+                if let Err(e) = device.perform_activation(device_index) {
+                    eprintln!(
+                        "SimpleHMD: ERROR: Failed to activate device {}: {:?}",
+                        device_index, e
+                    );
+                }
+            }
+        }
+
         // Update all devices each frame
         for device in &self.devices {
             device.update_pose();
@@ -201,51 +209,67 @@ impl HmdDeviceWrapper {
         // Update animation frame counter
         inner.frame_counter.fetch_add(1, Ordering::Relaxed);
     }
+}
 
-    /// Internal activation method that can be called after registration
-    pub fn activate_internal(&self, device_index: u32) -> DriverResult<()> {
-        eprintln!("SimpleHMD: Activating device {} internally", device_index);
+impl TrackedDeviceServerDriver for HmdDeviceWrapper {
+    fn perform_activation(&self, device_index: u32) -> DriverResult<()> {
+        eprintln!(
+            "SimpleHMD: [ACTIVATION] Performing activation for device index {}",
+            device_index
+        );
 
+        // Store the device index
         let inner = self.0.lock();
         inner.device_index.store(device_index, Ordering::Relaxed);
         inner.is_active.store(true, Ordering::Relaxed);
 
-        // Set up device properties
+        // Get values needed for properties before dropping the lock
         let model = inner.config.model_number.clone();
         let serial = inner.config.serial_number.clone();
         let freq = inner.config.display_frequency;
         let ipd = inner.config.ipd;
         eprintln!(
-            "SimpleHMD: Setting properties - Model: {}, Serial: {}, Freq: {}Hz, IPD: {}m",
+            "SimpleHMD: [ACTIVATION] About to set properties - Model: {}, Serial: {}, Freq: {}Hz, IPD: {}m",
             model, serial, freq, ipd
         );
         drop(inner); // Release lock before calling external functions
 
-        openvr_driver::properties::set_hmd_properties(device_index, &model, &serial, freq, ipd)?;
+        // Set device properties using batch writing
+        eprintln!("SimpleHMD: [ACTIVATION] Calling set_hmd_properties...");
+        let result =
+            openvr_driver::properties::set_hmd_properties(device_index, &model, &serial, freq, ipd);
 
-        eprintln!("SimpleHMD: Device {} activated successfully", device_index);
-        Ok(())
+        match &result {
+            Ok(()) => {
+                eprintln!(
+                    "SimpleHMD: [ACTIVATION] Device {} activated and properties set successfully",
+                    device_index
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "SimpleHMD: [ACTIVATION] ERROR: Failed to set properties for device {}: {:?}",
+                    device_index, e
+                );
+            }
+        }
+
+        result
     }
-}
 
-impl TrackedDeviceServerDriver for HmdDeviceWrapper {
     fn get_serial_number(&self) -> String {
         let inner = self.0.lock();
         inner.config.serial_number.clone()
     }
 
     fn activate(&mut self, device_index: u32) -> DriverResult<()> {
-        // Note: This method is called by OpenVR's vtable but due to Arc<dyn> limitations,
-        // we can't easily modify self here. The actual activation happens through
-        // interior mutability in HmdDeviceWrapper.
         eprintln!(
-            "SimpleHMD: Device activate callback received for index {}",
+            "SimpleHMD: Device activate callback received for index {} (handled by vtable)",
             device_index
         );
-
-        // The vtable implementation will return success, and we'll handle
-        // the actual activation through our internal method
-        self.activate_internal(device_index)
+        // The vtable handles storing the activation index globally
+        // It will be processed in run_frame
+        Ok(())
     }
 
     fn deactivate(&mut self) {
@@ -262,12 +286,18 @@ impl TrackedDeviceServerDriver for HmdDeviceWrapper {
         eprintln!("SimpleHMD: GetComponent requested for: {}", component_name);
 
         match component_name {
-            "IVRDisplayComponent" => {
-                // Return our display component with vtable
-                // Note: Component trait implementation needed for create_vtable
-                eprintln!("SimpleHMD: Display component requested");
-                // For now, return None until Component trait is properly implemented
-                None
+            "IVRDisplayComponent_003" => {
+                eprintln!(
+                    "SimpleHMD: Creating and returning display component vtable for version 003"
+                );
+                let inner = self.0.lock();
+                // Create the display component vtable
+                let display_vtable = openvr_driver::Component::create_vtable(inner.display.clone());
+                eprintln!(
+                    "SimpleHMD: Display component vtable created at {:?}",
+                    display_vtable
+                );
+                Some(display_vtable)
             }
             _ => {
                 eprintln!("SimpleHMD: Component {} not implemented", component_name);
@@ -372,11 +402,11 @@ impl openvr_driver::DisplayComponent for DisplayComponentImpl {
     }
 
     fn is_display_on_desktop(&self) -> bool {
-        true // Extended mode
+        true // Match C++ implementation
     }
 
     fn is_display_real(&self) -> bool {
-        false // This is a virtual HMD
+        false // This is a virtual HMD, not a real display
     }
 }
 
