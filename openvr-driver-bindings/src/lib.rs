@@ -98,10 +98,10 @@ pub mod interfaces {
         this: *mut root::vr::IServerTrackedDeviceProvider,
         driver_context: *mut root::vr::IVRDriverContext,
     ) -> EVRInitError {
-        // The wrapper stores vtable pointer then the Arc<T>
+        // The wrapper stores vtable pointer then the T
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.init(driver_context as *mut c_void)
     }
@@ -111,7 +111,7 @@ pub mod interfaces {
     ) {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.cleanup();
     }
@@ -123,7 +123,7 @@ pub mod interfaces {
     ) -> *const *const c_char {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.get_interface_versions()
     }
@@ -133,7 +133,7 @@ pub mod interfaces {
     ) {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.run_frame();
     }
@@ -145,7 +145,7 @@ pub mod interfaces {
     ) -> bool {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.should_block_standby_mode()
     }
@@ -157,7 +157,7 @@ pub mod interfaces {
     ) {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.enter_standby();
     }
@@ -169,7 +169,7 @@ pub mod interfaces {
     ) {
         let provider_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        >()) as *mut Arc<T>;
+        >()) as *mut T;
         let provider = &*provider_ptr;
         provider.leave_standby();
     }
@@ -230,7 +230,7 @@ macro_rules! impl_vtable_wrapper {
 }
 
 // Helper to create and box a provider with its vtable
-pub fn create_provider_wrapper<T>(provider: Arc<T>) -> *mut c_void
+pub fn create_provider_wrapper<T>(provider: T) -> *mut c_void
 where
     T: interfaces::IServerTrackedDeviceProvider_Interface + 'static,
 {
@@ -238,7 +238,7 @@ where
     #[repr(C)]
     struct ProviderWrapper<T> {
         vtable: *mut root::vr::IServerTrackedDeviceProvider__bindgen_vtable,
-        provider: Arc<T>,
+        provider: T,
     }
 
     let vtable_ptr = interfaces::create_provider_vtable::<T>();

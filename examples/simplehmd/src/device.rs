@@ -9,6 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 
+// Newtype wrapper to avoid orphan rule
+pub struct HmdDeviceWrapper(pub Arc<HmdDevice>);
+
 // Display component for the HMD
 pub struct DisplayComponent {
     config: DisplayConfiguration,
@@ -74,15 +77,15 @@ impl HmdDevice {
     }
 }
 
-impl ITrackedDeviceServerDriver_Interface for Arc<HmdDevice> {
+impl ITrackedDeviceServerDriver_Interface for HmdDeviceWrapper {
     fn activate(&self, device_index: u32) -> EVRInitError {
         eprintln!("SimpleHMD: Activating device {}", device_index);
 
-        self.device_index.store(device_index, Ordering::Relaxed);
-        self.is_active.store(true, Ordering::Relaxed);
+        self.0.device_index.store(device_index, Ordering::Relaxed);
+        self.0.is_active.store(true, Ordering::Relaxed);
 
         // Start pose update thread
-        let should_stop = self.should_stop.clone();
+        let should_stop = self.0.should_stop.clone();
 
         let pose_thread = thread::spawn(move || {
             while !should_stop.load(Ordering::Relaxed) {
@@ -92,13 +95,13 @@ impl ITrackedDeviceServerDriver_Interface for Arc<HmdDevice> {
             }
         });
 
-        *self.pose_thread.lock().unwrap() = Some(pose_thread);
+        *self.0.pose_thread.lock().unwrap() = Some(pose_thread);
 
         EVRInitError::None
     }
 
     fn deactivate(&self) {
-        self.deactivate();
+        self.0.deactivate();
     }
 
     fn enter_standby(&self) {
@@ -188,7 +191,7 @@ impl ITrackedDeviceServerDriver_Interface for Arc<HmdDevice> {
         };
 
         // Simple animation: rotate the HMD slowly
-        let frame = self.frame_number.fetch_add(1, Ordering::Relaxed) as f64;
+        let frame = self.0.frame_number.fetch_add(1, Ordering::Relaxed) as f64;
         let angle = frame * 0.01;
 
         // Quaternion for Y-axis rotation
@@ -203,14 +206,11 @@ impl ITrackedDeviceServerDriver_Interface for Arc<HmdDevice> {
 
 // Helper to create device vtable
 pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
-    device: Arc<T>,
+    device: T,
 ) -> *mut openvr_driver_bindings::root::vr::ITrackedDeviceServerDriver {
     use openvr_driver_bindings::root::vr::{
         ITrackedDeviceServerDriver, ITrackedDeviceServerDriver__bindgen_vtable,
     };
-
-    // Store the device Arc in a leaked box to keep it alive
-    let device_ptr = Box::into_raw(Box::new(device));
 
     // Create thunk functions for the vtable
     unsafe extern "C" fn activate_thunk<T: ITrackedDeviceServerDriver_Interface>(
@@ -220,8 +220,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
         // Recover the device from the pointer stored after the vtable
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.activate(device_index)
     }
 
@@ -230,8 +230,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     ) {
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.deactivate();
     }
 
@@ -240,8 +240,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     ) {
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.enter_standby();
     }
 
@@ -251,8 +251,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     ) -> *mut c_void {
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.get_component(component_name)
     }
 
@@ -264,8 +264,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     ) {
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.debug_request(request, response_buffer, response_buffer_size);
     }
 
@@ -274,8 +274,8 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     ) -> DriverPose_t {
         let device_ptr = (this as *mut u8).add(std::mem::size_of::<
             *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        >()) as *mut *mut Arc<T>;
-        let device = &**device_ptr;
+        >()) as *mut T;
+        let device = &*device_ptr;
         device.get_pose()
     }
 
@@ -294,17 +294,17 @@ pub fn create_device_vtable<T: ITrackedDeviceServerDriver_Interface + 'static>(
     #[repr(C)]
     struct DeviceWrapper<T> {
         vtable: *mut ITrackedDeviceServerDriver__bindgen_vtable,
-        device: *mut Arc<T>,
+        device: T,
     }
 
     let wrapper = Box::new(DeviceWrapper {
         vtable: vtable_ptr,
-        device: device_ptr,
+        device,
     });
 
     Box::into_raw(wrapper) as *mut ITrackedDeviceServerDriver
 }
 
 pub fn create_device_wrapper(device: Arc<HmdDevice>) -> *mut c_void {
-    create_device_vtable(device) as *mut c_void
+    create_device_vtable(HmdDeviceWrapper(device)) as *mut c_void
 }

@@ -1,10 +1,13 @@
-use crate::{DisplayConfiguration, HmdDevice};
+use crate::HmdDevice;
 use openvr_driver_bindings::{
     interfaces::IServerTrackedDeviceProvider_Interface,
-    root::vr::{EVRInitError, IVRDriverContext, IVRServerDriverHost},
+    root::vr::{ETrackedDeviceClass, EVRInitError, IVRDriverContext, IVRServerDriverHost},
 };
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_char, c_void, CString};
 use std::sync::{Arc, Mutex};
+
+// Newtype wrapper to avoid orphan rule
+pub struct ProviderWrapper(pub Arc<Mutex<SimpleHmdProvider>>);
 
 pub struct SimpleHmdProvider {
     hmd_device: Option<Arc<HmdDevice>>,
@@ -46,11 +49,11 @@ impl SimpleHmdProvider {
     }
 }
 
-impl IServerTrackedDeviceProvider_Interface for Arc<Mutex<SimpleHmdProvider>> {
+impl IServerTrackedDeviceProvider_Interface for ProviderWrapper {
     fn init(&self, driver_context: *mut c_void) -> EVRInitError {
         eprintln!("SimpleHMD Provider: Initializing...");
 
-        let mut provider = self.lock().unwrap();
+        let mut provider = self.0.lock().unwrap();
         provider.driver_context = Some(driver_context as *mut IVRDriverContext);
 
         // Get the driver host interface for registering devices
@@ -60,27 +63,56 @@ impl IServerTrackedDeviceProvider_Interface for Arc<Mutex<SimpleHmdProvider>> {
                 let host_interface = CString::new("IVRServerDriverHost_006").unwrap();
                 let mut error = EVRInitError::None;
 
-                let host_ptr = (*context)
-                    .GetGenericInterface(host_interface.as_ptr(), &mut error as *mut _ as *mut i32);
+                // Call through the vtable function pointer
+                let vtable = (*context).vtable_;
+                let host_ptr = if !vtable.is_null() {
+                    let get_interface_fn = (*vtable).IVRDriverContext_GetGenericInterface;
+                    get_interface_fn(
+                        context,
+                        host_interface.as_ptr(),
+                        &mut error as *mut EVRInitError,
+                    )
+                } else {
+                    std::ptr::null_mut()
+                };
 
                 if !host_ptr.is_null() && error == EVRInitError::None {
                     provider.driver_host = Some(host_ptr as *mut IVRServerDriverHost);
                     eprintln!("SimpleHMD Provider: Got driver host interface");
 
-                    // Create and register the HMD device
+                    // Create the HMD device
                     let hmd = HmdDevice::new();
 
                     // Register the device with OpenVR
                     let serial = CString::new(hmd.get_serial_number()).unwrap();
-                    let device_class = openvr_driver_bindings::root::vr::ETrackedDeviceClass::HMD;
+                    let device_wrapper = crate::device::create_device_wrapper(hmd.clone());
 
-                    // TODO: We need to create a device wrapper and register it
-                    // For now, just store the device
-                    provider.hmd_device = Some(hmd);
+                    // Call TrackedDeviceAdded to register the device
+                    let host = host_ptr as *mut IVRServerDriverHost;
+                    let host_vtable = (*host).vtable_;
+                    if !host_vtable.is_null() {
+                        let tracked_device_added =
+                            (*host_vtable).IVRServerDriverHost_TrackedDeviceAdded;
+                        let success = tracked_device_added(
+                            host,
+                            serial.as_ptr(),
+                            ETrackedDeviceClass::TrackedDeviceClass_HMD,
+                            device_wrapper as *mut _,
+                        );
 
-                    eprintln!("SimpleHMD Provider: Created HMD device");
+                        if success {
+                            eprintln!("SimpleHMD Provider: Successfully registered HMD device");
+                            provider.hmd_device = Some(hmd);
+                        } else {
+                            eprintln!("SimpleHMD Provider: Failed to register HMD device");
+                            return EVRInitError::Init_HmdNotFound;
+                        }
+                    }
                 } else {
-                    eprintln!("SimpleHMD Provider: Failed to get driver host interface");
+                    eprintln!(
+                        "SimpleHMD Provider: Failed to get driver host interface (error: {:?})",
+                        error
+                    );
                     return EVRInitError::Init_InterfaceNotFound;
                 }
             }
@@ -93,7 +125,7 @@ impl IServerTrackedDeviceProvider_Interface for Arc<Mutex<SimpleHmdProvider>> {
     fn cleanup(&self) {
         eprintln!("SimpleHMD Provider: Cleaning up...");
 
-        let mut provider = self.lock().unwrap();
+        let mut provider = self.0.lock().unwrap();
 
         if let Some(hmd) = &provider.hmd_device {
             hmd.deactivate();
@@ -105,12 +137,12 @@ impl IServerTrackedDeviceProvider_Interface for Arc<Mutex<SimpleHmdProvider>> {
     }
 
     fn get_interface_versions(&self) -> *const *const c_char {
-        let provider = self.lock().unwrap();
+        let provider = self.0.lock().unwrap();
         provider.interface_versions_ptrs.as_ptr()
     }
 
     fn run_frame(&self) {
-        let provider = self.lock().unwrap();
+        let provider = self.0.lock().unwrap();
         if let Some(hmd) = &provider.hmd_device {
             hmd.run_frame();
         }

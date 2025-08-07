@@ -13,7 +13,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 DRIVER_NAME="simplehmd"
-PROJECT_ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 DRIVER_DIR="$PROJECT_ROOT/examples/simplehmd/driver"
 
 echo -e "${GREEN}SimpleHMD Driver Build & Deploy Script${NC}"

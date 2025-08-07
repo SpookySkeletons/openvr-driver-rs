@@ -9,9 +9,9 @@ mod device;
 mod provider;
 
 use device::HmdDevice;
-use provider::SimpleHmdProvider;
+use provider::{ProviderWrapper, SimpleHmdProvider};
 
-use openvr_driver_bindings::{self as vr, create_provider_wrapper, root::vr::EVRInitError};
+use openvr_driver_bindings::{create_provider_wrapper, root::vr::EVRInitError};
 use std::ffi::{c_char, c_void, CStr};
 use std::sync::{Arc, Mutex};
 
@@ -77,11 +77,11 @@ pub unsafe extern "C" fn HmdDriverFactory(
             *provider_guard = Some(SimpleHmdProvider::new());
         }
 
-        if let Some(provider) = provider_guard.as_ref() {
+        if let Some(ref provider) = *provider_guard {
             *return_code = 0; // Success
 
             // Create and return the vtable wrapper for the provider
-            let vtable_ptr = create_provider_wrapper(provider.clone());
+            let vtable_ptr = create_provider_wrapper(ProviderWrapper(provider.clone()));
 
             eprintln!(
                 "SimpleHMD: Returning IServerTrackedDeviceProvider vtable at {:?}",

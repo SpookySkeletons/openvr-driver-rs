@@ -1,6 +1,5 @@
 use bindgen::callbacks::ParseCallbacks;
 use std::path::Path;
-use syn::parse_quote;
 
 #[allow(unused_macros)]
 macro_rules! dbg {
@@ -138,32 +137,8 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn process_driver_types(mut syntax: syn::File) -> String {
-    // Add our custom traits and implementations
-    let additional_items: Vec<syn::Item> = vec![
-        parse_quote! {
-            pub trait InterfaceImpl {
-                fn get_vtable(&self, version: &std::ffi::CStr) -> Option<*mut std::ffi::c_void>;
-            }
-        },
-        parse_quote! {
-            pub trait Inherits<T> {
-                fn new_wrapped(this: &std::sync::Arc<Self>) -> VtableWrapper<T, Self>
-                where
-                    Self: Sized;
-            }
-        },
-        parse_quote! {
-            #[repr(C)]
-            pub struct VtableWrapper<T, U> {
-                pub base: T,
-                pub this: std::sync::Arc<U>,
-            }
-        },
-    ];
-
-    syntax.items.extend(additional_items);
-
-    // Convert back to string
+fn process_driver_types(syntax: syn::File) -> String {
+    // Don't add any additional items - they're already defined in lib.rs
+    // Just return the processed syntax as-is
     prettyplease::unparse(&syntax)
 }
