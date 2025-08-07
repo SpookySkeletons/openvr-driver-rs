@@ -1,5 +1,5 @@
 [package]
-name = "pure_rust_driver"
+name = "simplehmd"
 version = "0.1.0"
 edition = "2021"
 

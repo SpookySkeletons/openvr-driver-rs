@@ -74,6 +74,10 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         "IVRDriverManager",
         "IVRResources",
         "IVRDriverInput",
+        "IVRDisplayComponent",
+        "IVRDriverLog",
+        "IVRSettings",
+        "IVRProperties",
     ];
 
     let mut builder = bindgen::builder()
@@ -105,6 +109,7 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allowlist_item("vr::k_.*") // Constants
         .allowlist_item("vr::VR.*") // VR functions
         .allowlist_type("vr::EVR.*") // Enums
+        .allowlist_type("vr::ETracking.*") // Tracking enums
         .allowlist_type("vr::.*Handle_t") // Handle types
         .allowlist_type("vr::TrackedDevice.*") // Device types
         .allowlist_type("vr::HmdMatrix.*") // Matrix types
@@ -112,7 +117,12 @@ pub fn main() -> Result<(), Box<dyn std::error::Error>> {
         .allowlist_type("vr::HmdQuaternion.*") // Quaternion types
         .allowlist_type("vr::DriverPose_t") // Driver pose
         .allowlist_type("vr::VRControllerState_t") // Controller state
+        .allowlist_type("vr::VREvent_t") // VR events
+        .allowlist_type("vr::VRInputComponentHandle_t") // Input handles
+        .allowlist_type("vr::DistortionCoordinates_t") // Display distortion
+        .allowlist_type("vr::PropertyContainerHandle_t") // Property container
         .allowlist_type("vr::Prop_.*") // Properties
+        .allowlist_item("vr::Prop_.*") // Property constants
         .blocklist_function("vr::VR_.*") // We'll implement these ourselves
         .rustified_enum(".*");
 
