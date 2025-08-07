@@ -1,4 +1,7 @@
-use crate::DisplayConfiguration;
+use crate::{
+    display::{create_display_wrapper, DisplayComponent, DisplayComponentWrapper},
+    settings::DriverSettings,
+};
 use openvr_driver_bindings::{
     interfaces::ITrackedDeviceServerDriver_Interface,
     root::vr::{DriverPose_t, EVRInitError, HmdQuaternion_t, VRInputComponentHandle_t},
@@ -12,22 +15,10 @@ use std::time::Duration;
 // Newtype wrapper to avoid orphan rule
 pub struct HmdDeviceWrapper(pub Arc<HmdDevice>);
 
-// Display component for the HMD
-pub struct DisplayComponent {
-    config: DisplayConfiguration,
-}
-
-impl DisplayComponent {
-    pub fn new(config: DisplayConfiguration) -> Self {
-        Self { config }
-    }
-}
-
 // HMD Device Driver
 pub struct HmdDevice {
-    display_component: Arc<Mutex<DisplayComponent>>,
-    model_number: String,
-    serial_number: String,
+    display_component: Arc<DisplayComponent>,
+    settings: DriverSettings,
     input_handles: Vec<VRInputComponentHandle_t>,
     frame_number: AtomicU32,
     is_active: AtomicBool,
@@ -41,12 +32,24 @@ unsafe impl Sync for HmdDevice {}
 
 impl HmdDevice {
     pub fn new() -> Arc<Self> {
-        let config = DisplayConfiguration::default();
+        // Load settings from VRSettings (or defaults)
+        let settings = DriverSettings::load();
+
+        // Create display configuration from settings
+        let config = crate::DisplayConfiguration {
+            window_x: settings.window_x,
+            window_y: settings.window_y,
+            window_width: settings.window_width,
+            window_height: settings.window_height,
+            render_width: settings.render_width,
+            render_height: settings.render_height,
+        };
+
+        let display_component = DisplayComponent::new(config);
 
         Arc::new(Self {
-            display_component: Arc::new(Mutex::new(DisplayComponent::new(config))),
-            model_number: "SimpleHMD_Model_v1".to_string(),
-            serial_number: "SIMPLEHMD_001".to_string(),
+            display_component,
+            settings,
             input_handles: Vec::new(),
             frame_number: AtomicU32::new(0),
             is_active: AtomicBool::new(false),
@@ -57,7 +60,7 @@ impl HmdDevice {
     }
 
     pub fn get_serial_number(&self) -> &str {
-        &self.serial_number
+        &self.settings.serial_number
     }
 
     pub fn run_frame(&self) {
@@ -83,6 +86,32 @@ impl ITrackedDeviceServerDriver_Interface for HmdDeviceWrapper {
 
         self.0.device_index.store(device_index, Ordering::Relaxed);
         self.0.is_active.store(true, Ordering::Relaxed);
+
+        // Set device properties that OpenVR requires
+        unsafe {
+            // Get property container for this device
+            // Note: In a real implementation, we'd get VRProperties from the driver context
+            // For now, we'll just log that these properties should be set
+            eprintln!("SimpleHMD: Should set device properties:");
+            eprintln!("  - Model Number: {}", self.0.settings.model_number);
+            eprintln!("  - Serial Number: {}", self.0.settings.serial_number);
+            eprintln!(
+                "  - Display Frequency: {} Hz",
+                self.0.settings.display_frequency
+            );
+            eprintln!("  - IPD: {} meters", self.0.settings.ipd);
+            eprintln!("  - Seconds from Vsync to Photons: 0.11");
+
+            // TODO: When VRProperties interface is available:
+            // let container = VRProperties()->TrackedDeviceToPropertyContainer(device_index);
+            // VRProperties()->SetStringProperty(container, Prop_ModelNumber_String, model_number);
+            // VRProperties()->SetStringProperty(container, Prop_SerialNumber_String, serial_number);
+            // VRProperties()->SetFloatProperty(container, Prop_DisplayFrequency_Float, 90.0);
+            // VRProperties()->SetFloatProperty(container, Prop_UserIpdMeters_Float, 0.063);
+            // VRProperties()->SetFloatProperty(container, Prop_SecondsFromVsyncToPhotons_Float, 0.11);
+            // VRProperties()->SetBoolProperty(container, Prop_IsOnDesktop_Bool, false);
+            // VRProperties()->SetBoolProperty(container, Prop_DisplayDebugMode_Bool, true);
+        }
 
         // Start pose update thread
         let should_stop = self.0.should_stop.clone();
@@ -120,9 +149,12 @@ impl ITrackedDeviceServerDriver_Interface for HmdDeviceWrapper {
             eprintln!("SimpleHMD: GetComponent requested for: {}", name_str);
 
             // Check if requesting display component
-            if name_str.starts_with("IVRDisplayComponent") {
-                // TODO: Return display component vtable
-                eprintln!("SimpleHMD: Would return display component here");
+            // The IVRDisplayComponent is critical for HMDs to work properly
+            if name_str == "IVRDisplayComponent_003" || name_str.starts_with("IVRDisplayComponent")
+            {
+                eprintln!("SimpleHMD: Returning display component");
+                // Return the display component with its vtable
+                return create_display_wrapper(self.0.display_component.clone());
             }
         }
 

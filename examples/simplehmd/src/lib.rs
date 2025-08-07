@@ -6,10 +6,14 @@
 #![allow(dead_code)]
 
 mod device;
+mod display;
 mod provider;
+mod settings;
 
 use device::HmdDevice;
+use display::DisplayComponent;
 use provider::{ProviderWrapper, SimpleHmdProvider};
+use settings::DriverSettings;
 
 use openvr_driver_bindings::{create_provider_wrapper, root::vr::EVRInitError};
 use std::ffi::{c_char, c_void, CStr};
