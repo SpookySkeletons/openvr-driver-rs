@@ -19,6 +19,5 @@ members = [
     "openvr-driver-bindings",
     "driver-macros",
     "openvr-driver",
-    "examples/simplehmd",
     "examples/simple_hmd_clean",
 ]
